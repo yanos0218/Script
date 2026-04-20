@@ -5,16 +5,17 @@ ISO_PATH="/root/Rocky-8.10-x86_64-dvd1.iso"
 SCRIPT_PATH="$0"
 MNT_DIR="/mnt/rocky810_iso"
 REPO_FILE="/etc/yum.repos.d/rocky-8.10-local.repo"
+REPO_DIR="/etc/yum.repos.d"
 STATE_DIR="/root/rocky810_minor_update_state"
 BACKUP_BASE_DIR="$STATE_DIR/repo_backups"
-RUN_ID=$(date +%Y%m%d%H%M%S)
-BACKUP_DIR="$BACKUP_BASE_DIR/repo_backup_$RUN_ID"
+RUN_ID=""
+BACKUP_DIR=""
 CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 UPDATE_STATUS_FILE="$STATE_DIR/update_status"
 LOCK_FILE="$STATE_DIR/update.lock"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_SHA256="6d0757e3bc2b4035f17e95d6cfe441808c4c6c950308797f5759904dec3c590e"
-SCRIPT_VERSION="1.8.0"
+SCRIPT_SHA256="e1c2abd02bb92b43f0065621ac621e9b4a47e640e8a40b8001caf863149d26e3"
+SCRIPT_VERSION="2.0.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -46,6 +47,11 @@ warn() {
 run_cmd() {
   info "Run: $*"
   "$@"
+}
+
+set_run_context() {
+  RUN_ID=$(date +%Y%m%d%H%M%S)
+  BACKUP_DIR="$BACKUP_BASE_DIR/repo_backup_$RUN_ID"
 }
 
 require_commands() {
@@ -85,8 +91,8 @@ write_update_status() {
   {
     echo "STATUS=$status"
     echo "UPDATED_AT=$(date +%Y%m%d%H%M%S)"
-    echo "RUN_ID=$RUN_ID"
-    echo "BACKUP_DIR=$BACKUP_DIR"
+    echo "RUN_ID=${RUN_ID:-none}"
+    echo "BACKUP_DIR=${BACKUP_DIR:-none}"
     echo "DETAIL=$detail"
   } > "$UPDATE_STATUS_FILE"
 }
@@ -348,7 +354,7 @@ backup_repos() {
   info "Backing up current repository files to: $BACKUP_DIR"
 
   repo_count=0
-  for repo_file in /etc/yum.repos.d/*.repo; do
+  for repo_file in "$REPO_DIR"/*.repo; do
     [ -e "$repo_file" ] || continue
     [ "$(basename "$repo_file")" = "$repo_file_name" ] && continue
     run_cmd cp -a "$repo_file" "$BACKUP_DIR"/
@@ -357,6 +363,7 @@ backup_repos() {
 
   if [ "$repo_count" -eq 0 ]; then
     warn "No repository files found to back up."
+    : > "$BACKUP_DIR/.no_repo_files"
     echo "$BACKUP_DIR" > "$CURRENT_BACKUP_FILE"
     return 0
   fi
@@ -371,7 +378,7 @@ disable_existing_repos() {
   info "Disabling existing repository files"
 
   repo_count=0
-  for repo_file in /etc/yum.repos.d/*.repo; do
+  for repo_file in "$REPO_DIR"/*.repo; do
     [ -e "$repo_file" ] || continue
     [ "$(basename "$repo_file")" = "$repo_file_name" ] && continue
     run_cmd mv "$repo_file" "$BACKUP_DIR"/
@@ -440,6 +447,11 @@ restore_repos() {
     return 0
   fi
 
+  if [ -f "$restore_backup_dir/.no_repo_files" ]; then
+    warn "Backup marker says no repository files existed before update."
+    return 0
+  fi
+
   backup_file_count=0
   for backup_file in "$restore_backup_dir"/*.repo; do
     [ -e "$backup_file" ] || continue
@@ -455,7 +467,7 @@ restore_repos() {
   for backup_file in "$restore_backup_dir"/*.repo; do
     [ -e "$backup_file" ] || continue
     [ "$(basename "$backup_file")" = "$repo_file_name" ] && continue
-    run_cmd cp -a "$backup_file" /etc/yum.repos.d/
+    run_cmd cp -a "$backup_file" "$REPO_DIR"/
     restore_count=$((restore_count + 1))
   done
 
@@ -535,6 +547,7 @@ run_minor_update() {
 
   WORK_STARTED=1
   RESTORE_ON_EXIT=1
+  set_run_context
   create_update_lock
   write_update_status "RUNNING" "Minor update started"
   trap cleanup_after_update 0
@@ -614,6 +627,7 @@ restore_previous_settings() {
       ;;
   esac
 
+  set_run_context
   restore_repos
   unmount_iso
   write_update_status "MANUAL_RESTORE_COMPLETED" "Manual restore completed"
