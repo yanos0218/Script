@@ -11,9 +11,10 @@ RUN_ID=$(date +%Y%m%d%H%M%S)
 BACKUP_DIR="$BACKUP_BASE_DIR/repo_backup_$RUN_ID"
 CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 UPDATE_STATUS_FILE="$STATE_DIR/update_status"
+LOCK_FILE="$STATE_DIR/update.lock"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_SHA256="65c59dbfe76b5ba5db341b253253a426dbe7d603b1c4065a25e3e082746dce6f"
-SCRIPT_VERSION="1.5.0"
+SCRIPT_SHA256="b7628d400f9f28fe96e45e4173553c31508afb93a46d61368f1bedc82bc3392b"
+SCRIPT_VERSION="1.7.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -96,15 +97,66 @@ read_update_status() {
   fi
 }
 
+is_pid_running() {
+  pid="$1"
+
+  case "$pid" in
+    ''|*[!0-9]*)
+      return 1
+      ;;
+  esac
+
+  kill -0 "$pid" >/dev/null 2>&1
+}
+
+read_lock_pid() {
+  if [ -f "$LOCK_FILE" ]; then
+    sed -n '1p' "$LOCK_FILE"
+  fi
+}
+
+check_update_lock() {
+  lock_pid=$(read_lock_pid || true)
+
+  if is_pid_running "$lock_pid"; then
+    fail "Another update task appears to be running. Lock file: $LOCK_FILE PID: $lock_pid"
+  fi
+
+  if [ -f "$LOCK_FILE" ]; then
+    warn "Stale update lock file found. Removing: $LOCK_FILE"
+    rm -f "$LOCK_FILE"
+  fi
+}
+
+create_update_lock() {
+  mkdir -p "$STATE_DIR"
+  check_update_lock
+  echo "$$" > "$LOCK_FILE"
+}
+
+remove_update_lock() {
+  lock_pid=$(read_lock_pid || true)
+
+  if [ "$lock_pid" = "$$" ]; then
+    rm -f "$LOCK_FILE"
+  fi
+}
+
 show_update_status() {
   if [ ! -f "$UPDATE_STATUS_FILE" ]; then
     info "Update status: no status file found"
     info "Status file: $UPDATE_STATUS_FILE"
-    return 0
+  else
+    info "Update status file: $UPDATE_STATUS_FILE"
+    cat "$UPDATE_STATUS_FILE"
   fi
 
-  info "Update status file: $UPDATE_STATUS_FILE"
-  cat "$UPDATE_STATUS_FILE"
+  lock_pid=$(read_lock_pid || true)
+  if is_pid_running "$lock_pid"; then
+    info "Active update lock: $LOCK_FILE PID: $lock_pid"
+  elif [ -f "$LOCK_FILE" ]; then
+    warn "Stale update lock file exists: $LOCK_FILE"
+  fi
 }
 
 require_root() {
@@ -372,11 +424,9 @@ restore_repos() {
   ok "Repository settings restored"
 }
 
-cleanup_after_update() {
-  exit_code=$?
+cleanup_update_work() {
+  exit_code="$1"
   cleanup_failed=0
-
-  trap - 0 INT TERM HUP
 
   if [ "$WORK_STARTED" -eq 1 ]; then
     if [ "$exit_code" -ne 0 ]; then
@@ -402,6 +452,26 @@ cleanup_after_update() {
     else
       write_update_status "FAILED_RESTORED" "Minor update failed or was cancelled; temporary settings were restored"
     fi
+
+    remove_update_lock
+    WORK_STARTED=0
+    RESTORE_ON_EXIT=0
+  fi
+
+  if [ "$cleanup_failed" -ne 0 ]; then
+    return 1
+  fi
+
+  return 0
+}
+
+cleanup_after_update() {
+  exit_code=$?
+
+  trap - 0 INT TERM HUP
+
+  if ! cleanup_update_work "$exit_code"; then
+    exit_code=1
   fi
 
   exit "$exit_code"
@@ -414,6 +484,7 @@ signal_exit() {
 
 run_minor_update() {
   check_environment
+  check_update_lock
 
   echo
   warn "This task will run Rocky Linux 8.10 package synchronization using the ISO only."
@@ -426,6 +497,7 @@ run_minor_update() {
 
   WORK_STARTED=1
   RESTORE_ON_EXIT=1
+  create_update_lock
   write_update_status "RUNNING" "Minor update started"
   trap cleanup_after_update 0
   trap signal_exit INT TERM HUP
@@ -467,12 +539,20 @@ run_minor_update() {
   run_cmd rpm -q rocky-release
 
   ok "Minor update completed. Reboot is recommended."
+
+  trap - 0 INT TERM HUP
+  if ! cleanup_update_work 0; then
+    fail "Post-update cleanup failed. Manual check required."
+  fi
+
+  ok "Post-update cleanup completed"
 }
 
 restore_previous_settings() {
   require_root
   require_commands
   verify_script_hash
+  check_update_lock
 
   current_status=$(read_update_status || true)
   if [ "$current_status" = "COMPLETED" ]; then
@@ -483,6 +563,18 @@ restore_previous_settings() {
       fail "Cancelled by user"
     fi
   fi
+
+  case "$current_status" in
+    RUNNING|ISO_MOUNTED|REPO_BACKED_UP|REPO_DISABLED|LOCAL_REPO_CREATED|SYNC_COMPLETED)
+      warn "Last update status is incomplete: $current_status"
+      warn "Use restore only after confirming no update process is running."
+      printf "Proceed with restore? [yes/NO]: "
+      read incomplete_restore_answer
+      if [ "$incomplete_restore_answer" != "yes" ]; then
+        fail "Cancelled by user"
+      fi
+      ;;
+  esac
 
   restore_repos
   unmount_iso
