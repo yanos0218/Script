@@ -15,7 +15,7 @@ Rocky8.10_minor_update.sh
 ## 버전
 
 ```text
-1.8.0
+2.0.0
 ```
 
 스크립트 내부의 `SCRIPT_VERSION` 값으로도 확인할 수 있습니다.
@@ -220,6 +220,8 @@ lock 파일에는 PID와 함께 OS boot id를 기록합니다. 재부팅 후 PID
 - update 성공 직후 메뉴로 돌아가기 전에 repo 복원과 ISO unmount를 즉시 수행합니다.
 - update 상태 파일로 완료, 실패, cleanup 실패, 수동 복원 여부를 확인할 수 있습니다.
 - 실행마다 timestamp 기반 repo 백업 디렉터리를 새로 생성합니다.
+- 같은 메뉴 세션에서 update를 여러 번 실행해도 매 실행마다 새 `RUN_ID`와 `BACKUP_DIR`를 생성합니다.
+- 기존 repo 파일이 하나도 없던 환경은 `.no_repo_files` marker로 기록해 복원 단계에서 실패로 처리하지 않습니다.
 - `current_backup` 파일로 현재 실행에서 복원할 백업 위치를 명확히 기록합니다.
 - `current_backup`이 없으면 최신 timestamp 백업 디렉터리를 fallback으로 사용합니다.
 - 복원 전 백업 디렉터리 안에 `.repo` 파일이 존재하는지 확인합니다.
@@ -244,6 +246,7 @@ lock 파일에는 PID와 함께 OS boot id를 기록합니다. 재부팅 후 PID
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.0.0 | 2026-04-20 | `RUN_ID`/`BACKUP_DIR`를 실행 시점마다 생성하도록 변경, 기존 repo 파일 0개 환경 복원 처리 개선, `REPO_DIR` 변수 추가 |
 | 1.8.0 | 2026-04-20 | update lock에 boot id를 추가해 재부팅 후 PID 재사용으로 인한 오판 방지 |
 | 1.7.0 | 2026-04-20 | update 성공 직후 cleanup 즉시 수행, update lock으로 중복 실행 및 실행 중 restore 방지 |
 | 1.6.0 | 2026-04-20 | update lock/status 확인 보강, 미완료 상태에서 수동 restore 재확인 추가 |
