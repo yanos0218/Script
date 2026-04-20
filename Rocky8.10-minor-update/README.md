@@ -15,7 +15,7 @@ Rocky8.10_minor_update.sh
 ## 버전
 
 ```text
-2.0.0
+2.1.0
 ```
 
 스크립트 내부의 `SCRIPT_VERSION` 값으로도 확인할 수 있습니다.
@@ -28,7 +28,7 @@ Rocky8.10_minor_update.sh
 - ISO 위치: `/root/Rocky-8.10-x86_64-dvd1.iso`
 - Rocky Linux GPG key: `/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial`
 - `/mnt` 디렉터리 존재
-- 필요 명령어: `awk`, `basename`, `cat`, `cp`, `date`, `df`, `dirname`, `dnf`, `grep`, `id`, `ls`, `mkdir`, `mount`, `mountpoint`, `mv`, `rm`, `rpm`, `sed`, `sha256sum`, `sort`, `tail`, `umount`
+- 필요 명령어: `awk`, `basename`, `cat`, `cp`, `date`, `df`, `dirname`, `dnf`, `grep`, `id`, `ls`, `mkdir`, `mount`, `mountpoint`, `mv`, `rm`, `rpm`, `sed`, `sha256sum`, `sort`, `tail`, `umount`, `uname`
 
 ## 용량 확인 기준
 
@@ -53,8 +53,9 @@ sh /root/Rocky8.10_minor_update.sh
 2. ISO mount management
 3. Run minor update
 4. Show update status
-5. Restore previous settings
-6. Exit
+5. Post-update verification
+6. Restore previous settings
+7. Exit
 ```
 
 ## Hash 검증
@@ -151,7 +152,9 @@ lock 파일 위치:
 /root/rocky810_minor_update_state/update.lock
 ```
 
-lock 파일에는 PID와 함께 OS boot id를 기록합니다. 재부팅 후 PID가 재사용되더라도 boot id가 다르면 이전 boot에서 남은 stale lock으로 판단해 제거합니다.
+lock 파일에는 PID와 함께 OS boot id를 기록합니다.
+
+PID는 재부팅 이후까지 update 작업을 추적하기 위한 값이 아닙니다. 같은 부팅 세션에서 `Run minor update`와 `Restore previous settings`가 동시에 실행되는 것을 막기 위한 동시 실행 방지 용도입니다. 재부팅 후에는 boot id가 달라지므로 이전 boot에서 남은 lock은 stale lock으로 판단해 제거합니다. 재부팅 이후의 판단은 PID가 아니라 `update_status` 파일의 상태 값을 기준으로 합니다.
 
 주요 상태 값은 다음과 같습니다.
 
@@ -170,7 +173,21 @@ lock 파일에는 PID와 함께 OS boot id를 기록합니다. 재부팅 후 PID
 
 실행 중인 lock PID가 있으면 status 메뉴에서 함께 표시됩니다. stale lock 파일은 다음 update 또는 restore 실행 시 제거합니다.
 
-### 5. Restore previous settings
+### 5. Post-update verification
+
+minor update가 `COMPLETED` 상태로 끝난 뒤에만 실행되는 완료 후 확인 메뉴입니다.
+
+다음 작업을 수행합니다.
+
+- 마지막 update status가 `COMPLETED`인지 확인
+- 현재 `/etc/rocky-release` 확인
+- `rocky-release` 패키지 버전 확인
+- 현재 실행 중인 kernel과 설치된 최신 kernel 패키지 비교
+- 재부팅 필요 여부 안내
+
+마지막 update status가 `COMPLETED`가 아니면 실행하지 않습니다. 미완료 상태에서 완료 후 검증 메뉴가 실행되어 잘못된 판단을 하지 않도록 막기 위한 동작입니다.
+
+### 6. Restore previous settings
 
 수동 복원 메뉴입니다.
 
@@ -183,7 +200,7 @@ lock 파일에는 PID와 함께 OS boot id를 기록합니다. 재부팅 후 PID
 - 복원할 `.repo` 파일이 실제로 존재하는지 확인
 - ISO 언마운트
 
-마지막 상태가 `COMPLETED`이면 정상적으로 cleanup이 끝난 상태이므로 복원은 보통 필요하지 않습니다. 이 경우 스크립트가 재확인을 요구합니다.
+마지막 상태가 `COMPLETED`이면 정상적으로 cleanup이 끝난 상태이므로 복원은 보통 필요하지 않습니다. 이 경우 스크립트가 재확인을 요구합니다. 완료 이후 확인은 `Post-update verification` 메뉴를 사용하는 것이 더 적합합니다.
 
 마지막 상태가 `RUNNING`, `ISO_MOUNTED`, `REPO_BACKED_UP`, `REPO_DISABLED`, `LOCAL_REPO_CREATED`, `SYNC_COMPLETED` 중 하나이면 미완료 상태로 간주하고 재확인을 요구합니다. 실행 중 lock PID가 살아 있으면 restore는 진행하지 않습니다.
 
@@ -199,6 +216,23 @@ lock 파일에는 PID와 함께 OS boot id를 기록합니다. 재부팅 후 PID
 | `/root/rocky810_minor_update_state/current_backup` | 현재 복원에 사용할 repo 백업 디렉터리 경로 |
 | `/root/rocky810_minor_update_state/update_status` | update 진행 상태 파일 |
 | `/root/rocky810_minor_update_state/update.lock` | 실행 중복 및 restore 충돌 방지 lock 파일 |
+
+## 버전 관리 기준
+
+스크립트 버전은 `MAJOR.MINOR.PATCH` 형식으로 관리합니다.
+
+| 자리 | 증가 기준 |
+|---|---|
+| `MAJOR` | 메뉴 구조, 상태 파일 의미, 복원 방식처럼 운영 절차나 호환성에 큰 영향을 주는 변경 |
+| `MINOR` | 새 메뉴, 새 검증 항목, 안전장치 추가처럼 기존 사용 방식을 유지하면서 기능이 늘어나는 변경 |
+| `PATCH` | 오타 수정, README 보강, 메시지 개선, 작은 버그 수정처럼 동작 구조를 바꾸지 않는 변경 |
+
+버전을 올릴 때는 다음 항목을 함께 갱신합니다.
+
+- `.sh` 내부 `SCRIPT_VERSION`
+- `.sh` 내부 `SCRIPT_SHA256`
+- README의 버전 값
+- README의 `Version History`
 
 ## 복원 동작
 
@@ -246,6 +280,7 @@ lock 파일에는 PID와 함께 OS boot id를 기록합니다. 재부팅 후 PID
 
 | Version | Date | Changes |
 |---|---|---|
+| 2.1.0 | 2026-04-20 | 완료 상태에서만 실행되는 `Post-update verification` 메뉴 추가, PID lock의 의미와 버전 관리 기준 문서화 |
 | 2.0.0 | 2026-04-20 | `RUN_ID`/`BACKUP_DIR`를 실행 시점마다 생성하도록 변경, 기존 repo 파일 0개 환경 복원 처리 개선, `REPO_DIR` 변수 추가 |
 | 1.8.0 | 2026-04-20 | update lock에 boot id를 추가해 재부팅 후 PID 재사용으로 인한 오판 방지 |
 | 1.7.0 | 2026-04-20 | update 성공 직후 cleanup 즉시 수행, update lock으로 중복 실행 및 실행 중 restore 방지 |
