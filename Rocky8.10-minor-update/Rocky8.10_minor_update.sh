@@ -6,7 +6,7 @@ MNT_DIR="/mnt/rocky810_iso"
 REPO_FILE="/etc/yum.repos.d/rocky-8.10-local.repo"
 STATE_DIR="/root/rocky810_minor_update_state"
 BACKUP_DIR="$STATE_DIR/repo_backup"
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.1.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -82,6 +82,17 @@ check_mount_path() {
     warn "이미 마운트되어 있습니다: $MNT_DIR"
   else
     ok "ISO 마운트 가능 위치 확인: $MNT_DIR"
+  fi
+}
+
+show_mount_status() {
+  if mountpoint -q "$MNT_DIR"; then
+    ok "ISO 마운트 상태: mounted"
+    info "마운트 위치: $MNT_DIR"
+    mount | grep " on $MNT_DIR " || true
+  else
+    info "ISO 마운트 상태: not mounted"
+    info "마운트 위치: $MNT_DIR"
   fi
 }
 
@@ -329,16 +340,52 @@ restore_previous_settings() {
   ok "minor update 이전 설정 복원 작업 완료"
 }
 
+manage_iso_mount() {
+  require_root
+
+  while true; do
+    echo
+    echo "ISO Mount Management"
+    echo "1. ISO 마운트 상태 확인"
+    echo "2. ISO 마운트"
+    echo "3. ISO 언마운트"
+    echo "4. 이전 메뉴"
+    echo
+    printf "선택 [1-4]: "
+    read mount_choice
+
+    case "$mount_choice" in
+      1)
+        show_mount_status
+        ;;
+      2)
+        require_iso
+        mount_iso
+        ;;
+      3)
+        unmount_iso
+        ;;
+      4)
+        return 0
+        ;;
+      *)
+        warn "잘못된 선택입니다."
+        ;;
+    esac
+  done
+}
+
 show_menu() {
   while true; do
     echo
     echo "Rocky Linux 8.10 Minor Update Menu v$SCRIPT_VERSION"
     echo "1. minor update 환경 확인"
     echo "2. minor update 진행"
-    echo "3. minor update 이전 설정 복원"
-    echo "4. 종료"
+    echo "3. ISO 마운트 관리"
+    echo "4. minor update 이전 설정 복원"
+    echo "5. 종료"
     echo
-    printf "선택 [1-4]: "
+    printf "선택 [1-5]: "
     read choice
 
     case "$choice" in
@@ -349,9 +396,12 @@ show_menu() {
         run_minor_update
         ;;
       3)
-        restore_previous_settings
+        manage_iso_mount
         ;;
       4)
+        restore_previous_settings
+        ;;
+      5)
         exit 0
         ;;
       *)
