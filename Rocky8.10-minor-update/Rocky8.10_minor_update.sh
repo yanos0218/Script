@@ -5,8 +5,12 @@ ISO_PATH="/root/Rocky-8.10-x86_64-dvd1.iso"
 MNT_DIR="/mnt/rocky810_iso"
 REPO_FILE="/etc/yum.repos.d/rocky-8.10-local.repo"
 STATE_DIR="/root/rocky810_minor_update_state"
-BACKUP_DIR="$STATE_DIR/repo_backup"
-SCRIPT_VERSION="1.2.0"
+BACKUP_BASE_DIR="$STATE_DIR/repo_backups"
+RUN_ID=$(date +%Y%m%d%H%M%S)
+BACKUP_DIR="$BACKUP_BASE_DIR/repo_backup_$RUN_ID"
+CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
+GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
+SCRIPT_VERSION="1.3.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -40,6 +44,22 @@ run_cmd() {
   "$@"
 }
 
+require_commands() {
+  missing_commands=""
+
+  for command_name in awk basename cat cp date df dirname dnf grep id mkdir mount mountpoint mv rm rpm umount; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+      missing_commands="$missing_commands $command_name"
+    fi
+  done
+
+  if [ -n "$missing_commands" ]; then
+    fail "Required command(s) not found:$missing_commands"
+  fi
+
+  ok "Required command check passed"
+}
+
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
     fail "This script must be run as root."
@@ -65,6 +85,14 @@ require_iso() {
   fi
 
   ok "ISO file found: $ISO_PATH"
+}
+
+require_gpg_key() {
+  if [ ! -f "$GPG_KEY" ]; then
+    fail "Rocky Linux GPG key not found: $GPG_KEY"
+  fi
+
+  ok "Rocky Linux GPG key found: $GPG_KEY"
 }
 
 free_mb() {
@@ -96,6 +124,18 @@ show_mount_status() {
   fi
 }
 
+get_mount_source() {
+  mount | awk -v target="$MNT_DIR" '$3 == target {print $1; exit}'
+}
+
+check_iso_mount_source() {
+  mounted_source=$(get_mount_source)
+
+  if [ -n "$mounted_source" ] && [ "$mounted_source" != "$ISO_PATH" ]; then
+    fail "Mount point is already used by another source: $mounted_source"
+  fi
+}
+
 check_space_one() {
   path="$1"
   min_mb="$2"
@@ -122,9 +162,11 @@ check_space() {
 
 check_environment() {
   require_root
+  require_commands
   info "Script version: $SCRIPT_VERSION"
   require_rocky8
   require_iso
+  require_gpg_key
   check_space
   check_mount_path
   ok "Minor update environment check completed"
@@ -134,6 +176,7 @@ mount_iso() {
   mkdir -p "$MNT_DIR"
 
   if mountpoint -q "$MNT_DIR"; then
+    check_iso_mount_source
     info "Using existing ISO mount: $MNT_DIR"
   else
     run_cmd mount -o loop,ro "$ISO_PATH" "$MNT_DIR"
@@ -162,14 +205,7 @@ unmount_iso() {
 backup_repos() {
   repo_file_name=$(basename "$REPO_FILE")
 
-  mkdir -p "$STATE_DIR"
-
-  if [ -d "$BACKUP_DIR" ]; then
-    warn "Repository backup already exists: $BACKUP_DIR"
-    warn "Keeping the existing backup and skipping a new backup."
-    return 0
-  fi
-
+  mkdir -p "$STATE_DIR" "$BACKUP_BASE_DIR"
   mkdir -p "$BACKUP_DIR"
   info "Backing up current repository files to: $BACKUP_DIR"
 
@@ -183,9 +219,11 @@ backup_repos() {
 
   if [ "$repo_count" -eq 0 ]; then
     warn "No repository files found to back up."
+    echo "$BACKUP_DIR" > "$CURRENT_BACKUP_FILE"
     return 0
   fi
 
+  echo "$BACKUP_DIR" > "$CURRENT_BACKUP_FILE"
   ok "Repository backup completed"
 }
 
@@ -219,14 +257,14 @@ name=Rocky Linux 8.10 - BaseOS - Local ISO
 baseurl=file://$MNT_DIR/BaseOS/
 enabled=1
 gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial
+gpgkey=file://$GPG_KEY
 
 [$APPSTREAM_REPO_ID]
 name=Rocky Linux 8.10 - AppStream - Local ISO
 baseurl=file://$MNT_DIR/AppStream/
 enabled=1
 gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial
+gpgkey=file://$GPG_KEY
 EOF
 
   ok "Local repository file created"
@@ -241,13 +279,27 @@ restore_repos() {
     run_cmd rm -f "$REPO_FILE"
   fi
 
-  if [ ! -d "$BACKUP_DIR" ]; then
-    warn "Repository backup directory not found: $BACKUP_DIR"
+  restore_backup_dir=""
+  if [ -f "$CURRENT_BACKUP_FILE" ]; then
+    restore_backup_dir=$(cat "$CURRENT_BACKUP_FILE")
+  fi
+
+  if [ -z "$restore_backup_dir" ] && [ -d "$STATE_DIR/repo_backup" ]; then
+    restore_backup_dir="$STATE_DIR/repo_backup"
+  fi
+
+  if [ -z "$restore_backup_dir" ]; then
+    warn "Current repository backup pointer not found: $CURRENT_BACKUP_FILE"
+    return 0
+  fi
+
+  if [ ! -d "$restore_backup_dir" ]; then
+    warn "Repository backup directory not found: $restore_backup_dir"
     return 0
   fi
 
   restore_count=0
-  for backup_file in "$BACKUP_DIR"/*.repo; do
+  for backup_file in "$restore_backup_dir"/*.repo; do
     [ -e "$backup_file" ] || continue
     [ "$(basename "$backup_file")" = "$repo_file_name" ] && continue
     run_cmd cp -a "$backup_file" /etc/yum.repos.d/
@@ -311,13 +363,18 @@ run_minor_update() {
 
   info "Cleaning DNF cache"
   run_cmd dnf clean all
-  run_cmd rm -rf /var/cache/dnf
 
   info "Checking local repositories"
   run_cmd dnf --disablerepo='*' --enablerepo="$BASEOS_REPO_ID","$APPSTREAM_REPO_ID" repolist
 
   info "Checking available updates"
-  dnf --disablerepo='*' --enablerepo="$BASEOS_REPO_ID","$APPSTREAM_REPO_ID" check-update || true
+  set +e
+  dnf --disablerepo='*' --enablerepo="$BASEOS_REPO_ID","$APPSTREAM_REPO_ID" check-update
+  check_update_rc=$?
+  set -e
+  if [ "$check_update_rc" -ne 0 ] && [ "$check_update_rc" -ne 100 ]; then
+    fail "dnf check-update failed with exit code: $check_update_rc"
+  fi
 
   info "Running distro-sync to Rocky Linux 8.10"
   run_cmd dnf -y --disablerepo='*' \
@@ -335,6 +392,7 @@ run_minor_update() {
 
 restore_previous_settings() {
   require_root
+  require_commands
   restore_repos
   unmount_iso
   ok "Previous settings restore completed"
@@ -342,6 +400,7 @@ restore_previous_settings() {
 
 manage_iso_mount() {
   require_root
+  require_commands
 
   while true; do
     echo
