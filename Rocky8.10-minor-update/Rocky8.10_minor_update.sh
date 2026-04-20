@@ -2,6 +2,8 @@
 set -eu
 
 ISO_PATH="/root/Rocky-8.10-x86_64-dvd1.iso"
+SCRIPT_PATH="$0"
+CHECKSUM_FILE="${SCRIPT_PATH}.sha256"
 MNT_DIR="/mnt/rocky810_iso"
 REPO_FILE="/etc/yum.repos.d/rocky-8.10-local.repo"
 STATE_DIR="/root/rocky810_minor_update_state"
@@ -10,7 +12,7 @@ RUN_ID=$(date +%Y%m%d%H%M%S)
 BACKUP_DIR="$BACKUP_BASE_DIR/repo_backup_$RUN_ID"
 CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_VERSION="1.3.0"
+SCRIPT_VERSION="1.4.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -47,7 +49,7 @@ run_cmd() {
 require_commands() {
   missing_commands=""
 
-  for command_name in awk basename cat cp date df dirname dnf grep id mkdir mount mountpoint mv rm rpm umount; do
+  for command_name in awk basename cat cp date df dirname dnf grep id ls mkdir mount mountpoint mv rm rpm sed sha256sum sort tail umount; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
       missing_commands="$missing_commands $command_name"
     fi
@@ -58,6 +60,24 @@ require_commands() {
   fi
 
   ok "Required command check passed"
+}
+
+verify_script_hash() {
+  if [ ! -f "$CHECKSUM_FILE" ]; then
+    fail "Checksum file not found: $CHECKSUM_FILE"
+  fi
+
+  expected_hash=$(sed -n '1s/[[:space:]].*$//p' "$CHECKSUM_FILE")
+  if [ -z "$expected_hash" ]; then
+    fail "Checksum file is empty or invalid: $CHECKSUM_FILE"
+  fi
+
+  actual_hash=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
+  if [ "$actual_hash" != "$expected_hash" ]; then
+    fail "Script checksum mismatch. Expected $expected_hash but got $actual_hash"
+  fi
+
+  ok "Script checksum verification passed"
 }
 
 require_root() {
@@ -163,6 +183,7 @@ check_space() {
 check_environment() {
   require_root
   require_commands
+  verify_script_hash
   info "Script version: $SCRIPT_VERSION"
   require_rocky8
   require_iso
@@ -284,6 +305,10 @@ restore_repos() {
     restore_backup_dir=$(cat "$CURRENT_BACKUP_FILE")
   fi
 
+  if [ -z "$restore_backup_dir" ] && [ -d "$BACKUP_BASE_DIR" ]; then
+    restore_backup_dir=$(ls -1d "$BACKUP_BASE_DIR"/repo_backup_* 2>/dev/null | sort | tail -n 1 || true)
+  fi
+
   if [ -z "$restore_backup_dir" ] && [ -d "$STATE_DIR/repo_backup" ]; then
     restore_backup_dir="$STATE_DIR/repo_backup"
   fi
@@ -298,6 +323,17 @@ restore_repos() {
     return 0
   fi
 
+  backup_file_count=0
+  for backup_file in "$restore_backup_dir"/*.repo; do
+    [ -e "$backup_file" ] || continue
+    [ "$(basename "$backup_file")" = "$repo_file_name" ] && continue
+    backup_file_count=$((backup_file_count + 1))
+  done
+
+  if [ "$backup_file_count" -eq 0 ]; then
+    fail "No repository backup files found in: $restore_backup_dir"
+  fi
+
   restore_count=0
   for backup_file in "$restore_backup_dir"/*.repo; do
     [ -e "$backup_file" ] || continue
@@ -305,11 +341,6 @@ restore_repos() {
     run_cmd cp -a "$backup_file" /etc/yum.repos.d/
     restore_count=$((restore_count + 1))
   done
-
-  if [ "$restore_count" -eq 0 ]; then
-    warn "No repository backup files found to restore."
-    return 0
-  fi
 
   ok "Repository settings restored"
 }
@@ -393,6 +424,7 @@ run_minor_update() {
 restore_previous_settings() {
   require_root
   require_commands
+  verify_script_hash
   restore_repos
   unmount_iso
   ok "Previous settings restore completed"
@@ -401,6 +433,7 @@ restore_previous_settings() {
 manage_iso_mount() {
   require_root
   require_commands
+  verify_script_hash
 
   while true; do
     echo
@@ -470,4 +503,7 @@ show_menu() {
   done
 }
 
+require_root
+require_commands
+verify_script_hash
 show_menu
