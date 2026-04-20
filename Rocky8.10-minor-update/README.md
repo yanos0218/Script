@@ -15,7 +15,7 @@ Rocky8.10_minor_update.sh
 ## 버전
 
 ```text
-1.2.0
+1.3.0
 ```
 
 스크립트 내부의 `SCRIPT_VERSION` 값으로도 확인할 수 있습니다.
@@ -26,8 +26,9 @@ Rocky8.10_minor_update.sh
 - root 권한
 - Rocky Linux 8.10 DVD ISO
 - ISO 위치: `/root/Rocky-8.10-x86_64-dvd1.iso`
+- Rocky Linux GPG key: `/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial`
 - `/mnt` 디렉터리 존재
-- 필요 명령어: `dnf`, `rpm`, `mount`, `umount`, `mountpoint`, `df`, `awk`
+- 필요 명령어: `awk`, `basename`, `cat`, `cp`, `date`, `df`, `dirname`, `dnf`, `grep`, `id`, `mkdir`, `mount`, `mountpoint`, `mv`, `rm`, `rpm`, `umount`
 
 ## 용량 확인 기준
 
@@ -62,10 +63,13 @@ sh /root/Rocky8.10_minor_update.sh
 다음 항목을 확인합니다.
 
 - root 권한 여부
+- 필수 명령어 존재 여부
+- 스크립트 버전
 - Rocky Linux 8.x 여부
 - 현재 OS 버전
 - 현재 `rocky-release` 패키지 버전
 - ISO 파일 존재 여부
+- Rocky Linux GPG key 존재 여부
 - `/`, `/var`, `/boot` 여유 공간
 - ISO 마운트 위치 상태
 
@@ -82,6 +86,8 @@ ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
 
 `Mount ISO`는 `/root/Rocky-8.10-x86_64-dvd1.iso` 파일을 `/mnt/rocky810_iso`에 read-only loop mount하고, `BaseOS`와 `AppStream` 디렉터리가 존재하는지 확인합니다.
 
+이미 `/mnt/rocky810_iso`가 마운트되어 있으면, 해당 마운트 source가 `/root/Rocky-8.10-x86_64-dvd1.iso`인지 확인합니다. 다른 source가 마운트되어 있으면 작업을 중단합니다.
+
 ### 3. Run minor update
 
 다음 순서로 작업합니다.
@@ -90,16 +96,17 @@ ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
 2. 사용자 진행 확인
 3. ISO read-only loop mount
 4. ISO 내 `BaseOS`, `AppStream` 디렉터리 확인
-5. 기존 repo 파일 백업
-6. 기존 repo 파일 임시 비활성화
-7. ISO 기반 local repo 파일 생성
-8. `dnf clean all` 실행
-9. local repo 확인
-10. 업데이트 대상 확인
-11. Rocky Linux 8.10 repo 기준 `dnf distro-sync` 실행
-12. 최종 OS 버전 확인
-13. 기존 repo 설정 복원
-14. ISO 언마운트
+5. 실행별 timestamp repo 백업 생성
+6. 현재 백업 경로를 `current_backup` 파일에 기록
+7. 기존 repo 파일 임시 비활성화
+8. ISO 기반 local repo 파일 생성
+9. `dnf clean all` 실행
+10. local repo 확인
+11. 업데이트 대상 확인
+12. Rocky Linux 8.10 repo 기준 `dnf distro-sync` 실행
+13. 최종 OS 버전 확인
+14. 기존 repo 설정 복원
+15. ISO 언마운트
 
 ### 4. Restore previous settings
 
@@ -108,7 +115,7 @@ ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
 다음 작업을 수행합니다.
 
 - 임시 ISO local repo 파일 삭제
-- 백업된 기존 repo 파일 복원
+- `current_backup`에 기록된 repo 백업 디렉터리에서 기존 repo 파일 복원
 - ISO 언마운트
 
 ## 변경 또는 사용되는 경로
@@ -120,17 +127,28 @@ ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
 | `/root/Rocky-8.10-x86_64-dvd1.iso` | Rocky Linux 8.10 DVD ISO |
 | `/mnt/rocky810_iso` | ISO mount point |
 | `/etc/yum.repos.d/rocky-8.10-local.repo` | 임시 local repo 파일 |
-| `/root/rocky810_minor_update_state/repo_backup` | 기존 repo 백업 디렉터리 |
+| `/root/rocky810_minor_update_state/repo_backups/repo_backup_YYYYMMDDHHMMSS` | 실행별 기존 repo 백업 디렉터리 |
+| `/root/rocky810_minor_update_state/current_backup` | 현재 복원에 사용할 repo 백업 디렉터리 경로 |
 
 ## 복원 동작
 
 `Run minor update`가 성공, 실패, 사용자 중단으로 종료되더라도 스크립트는 종료 전 다음 복원을 시도합니다.
 
 - `/etc/yum.repos.d/rocky-8.10-local.repo` 삭제
-- `/root/rocky810_minor_update_state/repo_backup`의 기존 repo 파일 복원
+- `current_backup`에 기록된 백업 디렉터리에서 기존 repo 파일 복원
 - `/mnt/rocky810_iso` 언마운트
 
 수동 복원이 필요한 경우 메인 메뉴에서 `4. Restore previous settings`를 실행합니다.
+
+## 개선된 안전장치
+
+- 실행마다 timestamp 기반 repo 백업 디렉터리를 새로 생성합니다.
+- `current_backup` 파일로 현재 실행에서 복원할 백업 위치를 명확히 기록합니다.
+- 필수 명령어 존재 여부를 사전에 확인합니다.
+- Rocky Linux GPG key 존재 여부를 사전에 확인합니다.
+- 이미 마운트된 ISO mount point의 source를 확인합니다.
+- `dnf check-update`는 exit code `0`과 `100`만 정상으로 처리하고, 그 외 오류는 실패 처리합니다.
+- `/var/cache/dnf` 직접 삭제는 제거하고 `dnf clean all`만 수행합니다.
 
 ## 주의사항
 
@@ -145,6 +163,7 @@ ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.3.0 | 2026-04-20 | 실행별 repo 백업, 필수 명령/GPG key 확인, mount source 확인, dnf check-update 오류 처리, DNF cache 삭제 방식 개선 |
 | 1.2.0 | 2026-04-20 | 스크립트 메뉴와 출력 메시지를 영어로 변경하고 ISO mount management를 2번 메뉴로 이동 |
 | 1.1.0 | 2026-04-20 | ISO mount 상태 확인, mount, unmount 관리 메뉴 추가 |
 | 1.0.0 | 2026-04-20 | Rocky Linux 8.10 오프라인 minor update 초기 버전 |
