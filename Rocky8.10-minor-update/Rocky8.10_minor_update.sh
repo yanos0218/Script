@@ -3,7 +3,6 @@ set -eu
 
 ISO_PATH="/root/Rocky-8.10-x86_64-dvd1.iso"
 SCRIPT_PATH="$0"
-CHECKSUM_FILE="${SCRIPT_PATH}.sha256"
 MNT_DIR="/mnt/rocky810_iso"
 REPO_FILE="/etc/yum.repos.d/rocky-8.10-local.repo"
 STATE_DIR="/root/rocky810_minor_update_state"
@@ -11,8 +10,10 @@ BACKUP_BASE_DIR="$STATE_DIR/repo_backups"
 RUN_ID=$(date +%Y%m%d%H%M%S)
 BACKUP_DIR="$BACKUP_BASE_DIR/repo_backup_$RUN_ID"
 CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
+UPDATE_STATUS_FILE="$STATE_DIR/update_status"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_VERSION="1.4.0"
+SCRIPT_SHA256="65c59dbfe76b5ba5db341b253253a426dbe7d603b1c4065a25e3e082746dce6f"
+SCRIPT_VERSION="1.5.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -63,21 +64,47 @@ require_commands() {
 }
 
 verify_script_hash() {
-  if [ ! -f "$CHECKSUM_FILE" ]; then
-    fail "Checksum file not found: $CHECKSUM_FILE"
+  if [ -z "$SCRIPT_SHA256" ] || [ "$SCRIPT_SHA256" = "TO_BE_FILLED" ]; then
+    fail "Embedded script checksum is not set."
   fi
 
-  expected_hash=$(sed -n '1s/[[:space:]].*$//p' "$CHECKSUM_FILE")
-  if [ -z "$expected_hash" ]; then
-    fail "Checksum file is empty or invalid: $CHECKSUM_FILE"
-  fi
-
-  actual_hash=$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')
-  if [ "$actual_hash" != "$expected_hash" ]; then
-    fail "Script checksum mismatch. Expected $expected_hash but got $actual_hash"
+  actual_hash=$(sed '/^SCRIPT_SHA256=/d' "$SCRIPT_PATH" | sha256sum | awk '{print $1}')
+  if [ "$actual_hash" != "$SCRIPT_SHA256" ]; then
+    fail "Script checksum mismatch. Expected $SCRIPT_SHA256 but got $actual_hash"
   fi
 
   ok "Script checksum verification passed"
+}
+
+write_update_status() {
+  status="$1"
+  detail="${2:-}"
+
+  mkdir -p "$STATE_DIR"
+  {
+    echo "STATUS=$status"
+    echo "UPDATED_AT=$(date +%Y%m%d%H%M%S)"
+    echo "RUN_ID=$RUN_ID"
+    echo "BACKUP_DIR=$BACKUP_DIR"
+    echo "DETAIL=$detail"
+  } > "$UPDATE_STATUS_FILE"
+}
+
+read_update_status() {
+  if [ -f "$UPDATE_STATUS_FILE" ]; then
+    sed -n 's/^STATUS=//p' "$UPDATE_STATUS_FILE" | tail -n 1
+  fi
+}
+
+show_update_status() {
+  if [ ! -f "$UPDATE_STATUS_FILE" ]; then
+    info "Update status: no status file found"
+    info "Status file: $UPDATE_STATUS_FILE"
+    return 0
+  fi
+
+  info "Update status file: $UPDATE_STATUS_FILE"
+  cat "$UPDATE_STATUS_FILE"
 }
 
 require_root() {
@@ -347,6 +374,7 @@ restore_repos() {
 
 cleanup_after_update() {
   exit_code=$?
+  cleanup_failed=0
 
   trap - 0 INT TERM HUP
 
@@ -356,10 +384,24 @@ cleanup_after_update() {
     fi
 
     if [ "$RESTORE_ON_EXIT" -eq 1 ]; then
-      restore_repos || warn "Repository restore failed. Manual check required: /etc/yum.repos.d"
+      if ! restore_repos; then
+        cleanup_failed=1
+        warn "Repository restore failed. Manual check required: /etc/yum.repos.d"
+      fi
     fi
 
-    unmount_iso || warn "ISO unmount failed. Manual check required: $MNT_DIR"
+    if ! unmount_iso; then
+      cleanup_failed=1
+      warn "ISO unmount failed. Manual check required: $MNT_DIR"
+    fi
+
+    if [ "$cleanup_failed" -ne 0 ]; then
+      write_update_status "CLEANUP_FAILED" "Manual restore check is required"
+    elif [ "$exit_code" -eq 0 ]; then
+      write_update_status "COMPLETED" "Minor update completed and temporary settings were restored"
+    else
+      write_update_status "FAILED_RESTORED" "Minor update failed or was cancelled; temporary settings were restored"
+    fi
   fi
 
   exit "$exit_code"
@@ -384,13 +426,18 @@ run_minor_update() {
 
   WORK_STARTED=1
   RESTORE_ON_EXIT=1
+  write_update_status "RUNNING" "Minor update started"
   trap cleanup_after_update 0
   trap signal_exit INT TERM HUP
 
   mount_iso
+  write_update_status "ISO_MOUNTED" "ISO mounted or existing ISO mount reused"
   backup_repos
+  write_update_status "REPO_BACKED_UP" "Repository files backed up"
   disable_existing_repos
+  write_update_status "REPO_DISABLED" "Existing repository files disabled"
   create_local_repo
+  write_update_status "LOCAL_REPO_CREATED" "Temporary ISO local repository created"
 
   info "Cleaning DNF cache"
   run_cmd dnf clean all
@@ -413,6 +460,7 @@ run_minor_update() {
     distro-sync
 
   ok "Package synchronization completed"
+  write_update_status "SYNC_COMPLETED" "Package synchronization completed; cleanup pending"
 
   info "Checking final OS version"
   run_cmd cat /etc/rocky-release
@@ -425,8 +473,20 @@ restore_previous_settings() {
   require_root
   require_commands
   verify_script_hash
+
+  current_status=$(read_update_status || true)
+  if [ "$current_status" = "COMPLETED" ]; then
+    warn "Last update status is COMPLETED. Restore is usually not required."
+    printf "Proceed with restore anyway? [yes/NO]: "
+    read restore_answer
+    if [ "$restore_answer" != "yes" ]; then
+      fail "Cancelled by user"
+    fi
+  fi
+
   restore_repos
   unmount_iso
+  write_update_status "MANUAL_RESTORE_COMPLETED" "Manual restore completed"
   ok "Previous settings restore completed"
 }
 
@@ -474,10 +534,11 @@ show_menu() {
     echo "1. Check minor update environment"
     echo "2. ISO mount management"
     echo "3. Run minor update"
-    echo "4. Restore previous settings"
-    echo "5. Exit"
+    echo "4. Show update status"
+    echo "5. Restore previous settings"
+    echo "6. Exit"
     echo
-    printf "Select [1-5]: "
+    printf "Select [1-6]: "
     read choice
 
     case "$choice" in
@@ -491,9 +552,12 @@ show_menu() {
         run_minor_update
         ;;
       4)
-        restore_previous_settings
+        show_update_status
         ;;
       5)
+        restore_previous_settings
+        ;;
+      6)
         exit 0
         ;;
       *)
