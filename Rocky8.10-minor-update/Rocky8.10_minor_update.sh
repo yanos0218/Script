@@ -14,8 +14,8 @@ CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 UPDATE_STATUS_FILE="$STATE_DIR/update_status"
 LOCK_FILE="$STATE_DIR/update.lock"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_SHA256="e1c2abd02bb92b43f0065621ac621e9b4a47e640e8a40b8001caf863149d26e3"
-SCRIPT_VERSION="2.0.0"
+SCRIPT_SHA256="99960a95203f543497a0c77eee84bd5acbfd44f7f5125f8498e15bbe7f0c4006"
+SCRIPT_VERSION="2.1.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -57,7 +57,7 @@ set_run_context() {
 require_commands() {
   missing_commands=""
 
-  for command_name in awk basename cat cp date df dirname dnf grep id ls mkdir mount mountpoint mv rm rpm sed sha256sum sort tail umount; do
+  for command_name in awk basename cat cp date df dirname dnf grep id ls mkdir mount mountpoint mv rm rpm sed sha256sum sort tail umount uname; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
       missing_commands="$missing_commands $command_name"
     fi
@@ -201,6 +201,51 @@ show_update_status() {
   elif [ -f "$LOCK_FILE" ]; then
     warn "Stale update lock file exists: $LOCK_FILE"
   fi
+}
+
+require_completed_update() {
+  current_status=$(read_update_status || true)
+
+  if [ "$current_status" != "COMPLETED" ]; then
+    fail "Post-update verification is allowed only after COMPLETED status. Current status: ${current_status:-none}"
+  fi
+}
+
+latest_installed_kernel() {
+  rpm -q kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' 2>/dev/null | sort -V | tail -n 1 || true
+}
+
+post_update_verification() {
+  require_root
+  require_commands
+  verify_script_hash
+  require_completed_update
+
+  info "Last update status is COMPLETED. Running post-update verification."
+
+  info "Current OS release"
+  run_cmd cat /etc/rocky-release
+
+  info "rocky-release package"
+  run_cmd rpm -q rocky-release
+
+  running_kernel=$(uname -r)
+  installed_kernel=$(latest_installed_kernel)
+
+  info "Running kernel: $running_kernel"
+  if [ -n "$installed_kernel" ]; then
+    info "Latest installed kernel package: $installed_kernel"
+    if [ "$running_kernel" != "$installed_kernel" ]; then
+      warn "Running kernel is not the latest installed kernel. Reboot is required to use the updated kernel."
+    else
+      ok "Running kernel matches the latest installed kernel package."
+    fi
+  else
+    warn "Could not determine the latest installed kernel package."
+  fi
+
+  warn "A reboot is still recommended after minor update because updated system libraries and services may already be installed but not loaded by running processes."
+  ok "Post-update verification completed"
 }
 
 require_root() {
@@ -679,10 +724,11 @@ show_menu() {
     echo "2. ISO mount management"
     echo "3. Run minor update"
     echo "4. Show update status"
-    echo "5. Restore previous settings"
-    echo "6. Exit"
+    echo "5. Post-update verification"
+    echo "6. Restore previous settings"
+    echo "7. Exit"
     echo
-    printf "Select [1-6]: "
+    printf "Select [1-7]: "
     read choice
 
     case "$choice" in
@@ -699,9 +745,12 @@ show_menu() {
         show_update_status
         ;;
       5)
-        restore_previous_settings
+        post_update_verification
         ;;
       6)
+        restore_previous_settings
+        ;;
+      7)
         exit 0
         ;;
       *)
