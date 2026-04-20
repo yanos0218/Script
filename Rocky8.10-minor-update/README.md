@@ -1,10 +1,10 @@
 # Rocky8.10 Minor Update
 
-Rocky Linux 8.x 시스템을 Rocky Linux 8.10 DVD ISO 기준으로 오프라인 minor update 하는 스크립트입니다.
+Offline minor update script for Rocky Linux 8.x systems using the Rocky Linux 8.10 DVD ISO.
 
 ## Purpose
 
-인터넷 연결이 불가능한 환경에서 `/root/Rocky-8.10-x86_64-dvd1.iso` 파일을 local repository로 사용해 Rocky Linux 8.10 기준 `dnf distro-sync`를 수행합니다.
+This script uses `/root/Rocky-8.10-x86_64-dvd1.iso` as a local repository and runs `dnf distro-sync` against Rocky Linux 8.10 BaseOS and AppStream repositories. It is intended for environments without internet access.
 
 ## Script
 
@@ -15,23 +15,23 @@ Rocky8.10_minor_update.sh
 ## Version
 
 ```text
-1.1.0
+1.2.0
 ```
 
-스크립트 내부의 `SCRIPT_VERSION` 값으로도 확인할 수 있습니다.
+The same version is available in the script as `SCRIPT_VERSION`.
 
 ## Requirements
 
 - Rocky Linux 8.x
-- root 권한
+- root privileges
 - Rocky Linux 8.10 DVD ISO
-- ISO 위치: `/root/Rocky-8.10-x86_64-dvd1.iso`
-- `/mnt` 디렉터리 존재
-- `dnf`, `rpm`, `mount`, `umount`, `mountpoint`, `df`, `awk` 명령 사용 가능
+- ISO path: `/root/Rocky-8.10-x86_64-dvd1.iso`
+- Existing `/mnt` directory
+- Required commands: `dnf`, `rpm`, `mount`, `umount`, `mountpoint`, `df`, `awk`
 
 ## Space Check
 
-스크립트는 minor update 진행 전 아래 여유 공간을 확인합니다.
+Before running the minor update, the script checks the following free space thresholds.
 
 | Path | Minimum Free Space |
 |---|---:|
@@ -45,75 +45,75 @@ Rocky8.10_minor_update.sh
 sh /root/Rocky8.10_minor_update.sh
 ```
 
-메뉴에서 필요한 작업을 선택합니다.
+Select the required task from the menu.
 
 ```text
-1. minor update 환경 확인
-2. minor update 진행
-3. ISO 마운트 관리
-4. minor update 이전 설정 복원
-5. 종료
+1. Check minor update environment
+2. ISO mount management
+3. Run minor update
+4. Restore previous settings
+5. Exit
 ```
 
 ## Menu
 
-### 1. minor update 환경 확인
+### 1. Check minor update environment
 
-다음 항목을 확인합니다.
+Checks the following items.
 
-- root 권한 여부
-- Rocky Linux 8.x 여부
-- 현재 OS 버전
-- 현재 `rocky-release` 패키지 버전
-- ISO 파일 존재 여부
-- `/`, `/var`, `/boot` 여유 공간
-- ISO 마운트 위치 상태
+- root privilege
+- Rocky Linux 8.x release
+- current OS version
+- current `rocky-release` package version
+- ISO file existence
+- free space for `/`, `/var`, and `/boot`
+- ISO mount point status
 
-### 2. minor update 진행
+### 2. ISO mount management
 
-다음 순서로 작업합니다.
-
-1. 환경 확인
-2. 사용자 확인 입력
-3. ISO read-only loop mount
-4. ISO 내 `BaseOS`, `AppStream` 디렉터리 확인
-5. 기존 repo 파일 백업
-6. 기존 repo 파일 임시 비활성화
-7. ISO 기반 local repo 생성
-8. `dnf clean all`
-9. local repo 확인
-10. 업데이트 대상 확인
-11. Rocky Linux 8.10 기준 `dnf distro-sync`
-12. 최종 OS 버전 확인
-13. 기존 repo 설정 복원
-14. ISO 언마운트
-
-### 3. ISO 마운트 관리
-
-ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
+Manually checks or controls the ISO mount state.
 
 ```text
-1. ISO 마운트 상태 확인
-2. ISO 마운트
-3. ISO 언마운트
-4. 이전 메뉴
+1. Show ISO mount status
+2. Mount ISO
+3. Unmount ISO
+4. Back to main menu
 ```
 
-`ISO 마운트`는 `/root/Rocky-8.10-x86_64-dvd1.iso` 파일을 `/mnt/rocky810_iso`에 read-only loop mount하고, `BaseOS`와 `AppStream` 디렉터리가 있는지 확인합니다.
+`Mount ISO` mounts `/root/Rocky-8.10-x86_64-dvd1.iso` to `/mnt/rocky810_iso` as a read-only loop device and checks that `BaseOS` and `AppStream` directories exist.
 
-### 4. minor update 이전 설정 복원
+### 3. Run minor update
 
-수동 복원 메뉴입니다.
+Runs the update in the following order.
 
-다음 작업을 수행합니다.
+1. Check environment
+2. Ask for user confirmation
+3. Mount ISO as read-only loop device
+4. Check `BaseOS` and `AppStream` directories in the ISO
+5. Back up existing repo files
+6. Temporarily disable existing repo files
+7. Create ISO-based local repo file
+8. Run `dnf clean all`
+9. Check local repositories
+10. Check available updates
+11. Run `dnf distro-sync` against Rocky Linux 8.10 repositories
+12. Check final OS version
+13. Restore previous repo settings
+14. Unmount ISO
 
-- ISO local repo 파일 삭제
-- 백업된 기존 repo 파일 복원
-- ISO 언마운트
+### 4. Restore previous settings
+
+Manual restore menu item.
+
+It performs the following tasks.
+
+- Remove the temporary ISO local repo file
+- Restore backed-up repo files
+- Unmount ISO
 
 ## Changed Paths
 
-스크립트 실행 중 다음 경로를 사용합니다.
+The script uses the following paths.
 
 | Path | Purpose |
 |---|---|
@@ -124,26 +124,27 @@ ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
 
 ## Restore Behavior
 
-`minor update 진행` 중 성공, 실패, 사용자 중단이 발생해도 스크립트는 종료 시 다음 복원을 시도합니다.
+When `Run minor update` succeeds, fails, or is interrupted, the script attempts to restore the following items before it exits.
 
-- `/etc/yum.repos.d/rocky-8.10-local.repo` 삭제
-- `/root/rocky810_minor_update_state/repo_backup` 안의 기존 repo 파일 복원
-- `/mnt/rocky810_iso` 언마운트
+- remove `/etc/yum.repos.d/rocky-8.10-local.repo`
+- restore repo files from `/root/rocky810_minor_update_state/repo_backup`
+- unmount `/mnt/rocky810_iso`
 
-수동 복원이 필요한 경우 메뉴에서 `4. minor update 이전 설정 복원`을 실행합니다.
+If manual restore is required, run `4. Restore previous settings` from the main menu.
 
 ## Notes
 
-- 온라인 repository는 사용하지 않습니다.
-- ISO의 `BaseOS`와 `AppStream`만 사용합니다.
-- EPEL, vendor repo, custom repo에 의존하는 패키지는 별도 검토가 필요합니다.
-- `dnf autoremove`는 자동 실행하지 않습니다.
-- 운영 서버 적용 전 테스트 서버에서 먼저 검증합니다.
-- 작업 완료 후 재부팅을 권장합니다.
+- Online repositories are not used.
+- Only `BaseOS` and `AppStream` from the ISO are used.
+- Packages that depend on EPEL, vendor repositories, or custom repositories need separate review.
+- `dnf autoremove` is not run automatically.
+- Validate on a test server before applying to production.
+- Reboot is recommended after completion.
 
 ## Version History
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.2.0 | 2026-04-20 | Convert script menus and output to English; move ISO mount management to menu item 2 |
 | 1.1.0 | 2026-04-20 | Add ISO mount management menu for status, mount, and unmount |
 | 1.0.0 | 2026-04-20 | Initial release for Rocky Linux 8.10 offline minor update |
