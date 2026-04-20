@@ -10,12 +10,13 @@ Rocky Linux 8.x 시스템을 Rocky Linux 8.10 DVD ISO 기준으로 오프라인 
 
 ```text
 Rocky8.10_minor_update.sh
+Rocky8.10_minor_update.sh.sha256
 ```
 
 ## 버전
 
 ```text
-1.3.0
+1.4.0
 ```
 
 스크립트 내부의 `SCRIPT_VERSION` 값으로도 확인할 수 있습니다.
@@ -26,9 +27,10 @@ Rocky8.10_minor_update.sh
 - root 권한
 - Rocky Linux 8.10 DVD ISO
 - ISO 위치: `/root/Rocky-8.10-x86_64-dvd1.iso`
+- 스크립트 checksum 파일 위치: `/root/Rocky8.10_minor_update.sh.sha256`
 - Rocky Linux GPG key: `/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial`
 - `/mnt` 디렉터리 존재
-- 필요 명령어: `awk`, `basename`, `cat`, `cp`, `date`, `df`, `dirname`, `dnf`, `grep`, `id`, `mkdir`, `mount`, `mountpoint`, `mv`, `rm`, `rpm`, `umount`
+- 필요 명령어: `awk`, `basename`, `cat`, `cp`, `date`, `df`, `dirname`, `dnf`, `grep`, `id`, `ls`, `mkdir`, `mount`, `mountpoint`, `mv`, `rm`, `rpm`, `sed`, `sha256sum`, `sort`, `tail`, `umount`
 
 ## 용량 확인 기준
 
@@ -56,6 +58,20 @@ sh /root/Rocky8.10_minor_update.sh
 5. Exit
 ```
 
+## Hash 검증
+
+스크립트 실행 시 `/root/Rocky8.10_minor_update.sh.sha256` 파일의 hash 값과 실제 `/root/Rocky8.10_minor_update.sh`의 hash 값을 비교합니다.
+
+검증 실패 시 스크립트는 실행을 중단합니다.
+
+```sh
+sha256sum /root/Rocky8.10_minor_update.sh
+```
+
+스크립트를 수정하거나 GitHub에서 새 버전을 배포한 경우 `.sha256` 파일도 함께 갱신해야 합니다.
+
+주의할 점은 hash 검증이 실수로 인한 파일 손상이나 배포 누락을 잡는 데 유용하지만, 공격자가 `.sh`와 `.sha256` 파일을 모두 바꿀 수 있는 권한을 가진 경우에는 완전한 위변조 방지가 아닙니다. 더 강한 보장이 필요하면 GPG 서명 검증 방식이 필요합니다.
+
 ## 메뉴 설명
 
 ### 1. Check minor update environment
@@ -64,6 +80,7 @@ sh /root/Rocky8.10_minor_update.sh
 
 - root 권한 여부
 - 필수 명령어 존재 여부
+- 스크립트 checksum 검증
 - 스크립트 버전
 - Rocky Linux 8.x 여부
 - 현재 OS 버전
@@ -116,6 +133,8 @@ ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
 
 - 임시 ISO local repo 파일 삭제
 - `current_backup`에 기록된 repo 백업 디렉터리에서 기존 repo 파일 복원
+- `current_backup`이 없으면 `repo_backups` 하위의 최신 timestamp 백업 디렉터리를 사용
+- 복원할 `.repo` 파일이 실제로 존재하는지 확인
 - ISO 언마운트
 
 ## 변경 또는 사용되는 경로
@@ -124,6 +143,8 @@ ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
 
 | 경로 | 용도 |
 |---|---|
+| `/root/Rocky8.10_minor_update.sh` | 실행 스크립트 |
+| `/root/Rocky8.10_minor_update.sh.sha256` | 스크립트 checksum 파일 |
 | `/root/Rocky-8.10-x86_64-dvd1.iso` | Rocky Linux 8.10 DVD ISO |
 | `/mnt/rocky810_iso` | ISO mount point |
 | `/etc/yum.repos.d/rocky-8.10-local.repo` | 임시 local repo 파일 |
@@ -136,14 +157,19 @@ ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
 
 - `/etc/yum.repos.d/rocky-8.10-local.repo` 삭제
 - `current_backup`에 기록된 백업 디렉터리에서 기존 repo 파일 복원
+- `current_backup`이 없으면 최신 timestamp 백업 디렉터리 사용
+- 복원할 `.repo` 파일이 없으면 실패 처리
 - `/mnt/rocky810_iso` 언마운트
 
 수동 복원이 필요한 경우 메인 메뉴에서 `4. Restore previous settings`를 실행합니다.
 
 ## 개선된 안전장치
 
+- 실행 시 스크립트 checksum을 검증합니다.
 - 실행마다 timestamp 기반 repo 백업 디렉터리를 새로 생성합니다.
 - `current_backup` 파일로 현재 실행에서 복원할 백업 위치를 명확히 기록합니다.
+- `current_backup`이 없으면 최신 timestamp 백업 디렉터리를 fallback으로 사용합니다.
+- 복원 전 백업 디렉터리 안에 `.repo` 파일이 존재하는지 확인합니다.
 - 필수 명령어 존재 여부를 사전에 확인합니다.
 - Rocky Linux GPG key 존재 여부를 사전에 확인합니다.
 - 이미 마운트된 ISO mount point의 source를 확인합니다.
@@ -158,11 +184,13 @@ ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
 - `dnf autoremove`는 자동 실행하지 않습니다.
 - 운영 서버 적용 전 테스트 서버에서 먼저 검증해야 합니다.
 - 작업 완료 후 재부팅을 권장합니다.
+- `.sh` 파일을 수정하면 `.sha256` 파일도 반드시 갱신해야 합니다.
 
 ## Version History
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.4.0 | 2026-04-20 | 스크립트 checksum 검증 추가, 복원 시 최신 백업 fallback 및 repo 파일 존재 확인 추가 |
 | 1.3.0 | 2026-04-20 | 실행별 repo 백업, 필수 명령/GPG key 확인, mount source 확인, dnf check-update 오류 처리, DNF cache 삭제 방식 개선 |
 | 1.2.0 | 2026-04-20 | 스크립트 메뉴와 출력 메시지를 영어로 변경하고 ISO mount management를 2번 메뉴로 이동 |
 | 1.1.0 | 2026-04-20 | ISO mount 상태 확인, mount, unmount 관리 메뉴 추가 |
