@@ -6,7 +6,7 @@ MNT_DIR="/mnt/rocky810_iso"
 REPO_FILE="/etc/yum.repos.d/rocky-8.10-local.repo"
 STATE_DIR="/root/rocky810_minor_update_state"
 BACKUP_DIR="$STATE_DIR/repo_backup"
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.2.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -36,35 +36,35 @@ warn() {
 }
 
 run_cmd() {
-  info "실행: $*"
+  info "Run: $*"
   "$@"
 }
 
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
-    fail "root 권한으로 실행해야 합니다."
+    fail "This script must be run as root."
   fi
 }
 
 require_rocky8() {
   if [ ! -f /etc/rocky-release ]; then
-    fail "Rocky Linux 시스템이 아닙니다."
+    fail "This system is not Rocky Linux."
   fi
 
   if ! grep -qE '^Rocky Linux release 8\.' /etc/rocky-release; then
-    fail "현재 시스템이 Rocky Linux 8.x가 아닙니다."
+    fail "This system is not Rocky Linux 8.x."
   fi
 
-  info "현재 OS: $(cat /etc/rocky-release)"
-  info "현재 rocky-release 패키지: $(rpm -q rocky-release || true)"
+  info "Current OS: $(cat /etc/rocky-release)"
+  info "Current rocky-release package: $(rpm -q rocky-release || true)"
 }
 
 require_iso() {
   if [ ! -f "$ISO_PATH" ]; then
-    fail "ISO 파일이 없습니다: $ISO_PATH"
+    fail "ISO file not found: $ISO_PATH"
   fi
 
-  ok "ISO 파일 확인: $ISO_PATH"
+  ok "ISO file found: $ISO_PATH"
 }
 
 free_mb() {
@@ -75,24 +75,24 @@ check_mount_path() {
   parent_dir=$(dirname "$MNT_DIR")
 
   if [ ! -d "$parent_dir" ]; then
-    fail "마운트 상위 디렉터리가 없습니다: $parent_dir"
+    fail "Mount parent directory does not exist: $parent_dir"
   fi
 
   if mountpoint -q "$MNT_DIR"; then
-    warn "이미 마운트되어 있습니다: $MNT_DIR"
+    warn "Mount point is already mounted: $MNT_DIR"
   else
-    ok "ISO 마운트 가능 위치 확인: $MNT_DIR"
+    ok "ISO mount point is available: $MNT_DIR"
   fi
 }
 
 show_mount_status() {
   if mountpoint -q "$MNT_DIR"; then
-    ok "ISO 마운트 상태: mounted"
-    info "마운트 위치: $MNT_DIR"
+    ok "ISO mount status: mounted"
+    info "Mount point: $MNT_DIR"
     mount | grep " on $MNT_DIR " || true
   else
-    info "ISO 마운트 상태: not mounted"
-    info "마운트 위치: $MNT_DIR"
+    info "ISO mount status: not mounted"
+    info "Mount point: $MNT_DIR"
   fi
 }
 
@@ -102,16 +102,16 @@ check_space_one() {
   label="$3"
 
   if [ ! -e "$path" ]; then
-    warn "$label 경로가 없어 용량 확인을 건너뜁니다: $path"
+    warn "$label path does not exist. Skipping space check: $path"
     return 0
   fi
 
   available_mb=$(free_mb "$path")
   if [ "$available_mb" -lt "$min_mb" ]; then
-    fail "$label 여유 공간 부족: ${available_mb}MB 사용 가능, 최소 ${min_mb}MB 필요"
+    fail "$label has insufficient free space: ${available_mb}MB available, ${min_mb}MB required"
   fi
 
-  ok "$label 여유 공간 확인: ${available_mb}MB 사용 가능"
+  ok "$label free space check passed: ${available_mb}MB available"
 }
 
 check_space() {
@@ -122,40 +122,40 @@ check_space() {
 
 check_environment() {
   require_root
-  info "스크립트 버전: $SCRIPT_VERSION"
+  info "Script version: $SCRIPT_VERSION"
   require_rocky8
   require_iso
   check_space
   check_mount_path
-  ok "minor update 환경 확인 완료"
+  ok "Minor update environment check completed"
 }
 
 mount_iso() {
   mkdir -p "$MNT_DIR"
 
   if mountpoint -q "$MNT_DIR"; then
-    info "기존 ISO 마운트 사용: $MNT_DIR"
+    info "Using existing ISO mount: $MNT_DIR"
   else
     run_cmd mount -o loop,ro "$ISO_PATH" "$MNT_DIR"
   fi
 
   if [ ! -d "$MNT_DIR/BaseOS" ]; then
-    fail "BaseOS 디렉터리가 없습니다. Rocky 8.10 DVD ISO인지 확인하세요."
+    fail "BaseOS directory not found. Check that this is a Rocky Linux 8.10 DVD ISO."
   fi
 
   if [ ! -d "$MNT_DIR/AppStream" ]; then
-    fail "AppStream 디렉터리가 없습니다. Rocky 8.10 DVD ISO인지 확인하세요."
+    fail "AppStream directory not found. Check that this is a Rocky Linux 8.10 DVD ISO."
   fi
 
-  ok "ISO 마운트 및 DVD repo 구조 확인 완료"
+  ok "ISO mount and DVD repository structure check completed"
 }
 
 unmount_iso() {
   if mountpoint -q "$MNT_DIR"; then
     run_cmd umount "$MNT_DIR"
-    ok "ISO 언마운트 완료: $MNT_DIR"
+    ok "ISO unmounted: $MNT_DIR"
   else
-    info "언마운트 대상이 없습니다: $MNT_DIR"
+    info "No mounted ISO found at: $MNT_DIR"
   fi
 }
 
@@ -165,13 +165,13 @@ backup_repos() {
   mkdir -p "$STATE_DIR"
 
   if [ -d "$BACKUP_DIR" ]; then
-    warn "기존 repo 백업이 이미 있습니다: $BACKUP_DIR"
-    warn "기존 백업을 유지하고 현재 설정 백업은 건너뜁니다."
+    warn "Repository backup already exists: $BACKUP_DIR"
+    warn "Keeping the existing backup and skipping a new backup."
     return 0
   fi
 
   mkdir -p "$BACKUP_DIR"
-  info "기존 repo 백업: $BACKUP_DIR"
+  info "Backing up current repository files to: $BACKUP_DIR"
 
   repo_count=0
   for repo_file in /etc/yum.repos.d/*.repo; do
@@ -182,17 +182,17 @@ backup_repos() {
   done
 
   if [ "$repo_count" -eq 0 ]; then
-    warn "백업할 repo 파일이 없습니다."
+    warn "No repository files found to back up."
     return 0
   fi
 
-  ok "기존 repo 백업 완료"
+  ok "Repository backup completed"
 }
 
 disable_existing_repos() {
   repo_file_name=$(basename "$REPO_FILE")
 
-  info "기존 repo 비활성화"
+  info "Disabling existing repository files"
 
   repo_count=0
   for repo_file in /etc/yum.repos.d/*.repo; do
@@ -203,15 +203,15 @@ disable_existing_repos() {
   done
 
   if [ "$repo_count" -eq 0 ]; then
-    warn "비활성화할 repo 파일이 없습니다."
+    warn "No repository files found to disable."
     return 0
   fi
 
-  ok "기존 repo 비활성화 완료"
+  ok "Existing repository files disabled"
 }
 
 create_local_repo() {
-  info "Rocky 8.10 ISO local repo 생성: $REPO_FILE"
+  info "Creating Rocky Linux 8.10 ISO local repository file: $REPO_FILE"
 
   cat > "$REPO_FILE" <<EOF
 [$BASEOS_REPO_ID]
@@ -229,20 +229,20 @@ gpgcheck=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial
 EOF
 
-  ok "local repo 생성 완료"
+  ok "Local repository file created"
 }
 
 restore_repos() {
   repo_file_name=$(basename "$REPO_FILE")
 
-  info "minor update 이전 repo 설정 복원 시작"
+  info "Restoring repository settings"
 
   if [ -f "$REPO_FILE" ]; then
     run_cmd rm -f "$REPO_FILE"
   fi
 
   if [ ! -d "$BACKUP_DIR" ]; then
-    warn "repo 백업 디렉터리가 없습니다: $BACKUP_DIR"
+    warn "Repository backup directory not found: $BACKUP_DIR"
     return 0
   fi
 
@@ -255,11 +255,11 @@ restore_repos() {
   done
 
   if [ "$restore_count" -eq 0 ]; then
-    warn "복원할 repo 백업 파일이 없습니다."
+    warn "No repository backup files found to restore."
     return 0
   fi
 
-  ok "repo 설정 복원 완료"
+  ok "Repository settings restored"
 }
 
 cleanup_after_update() {
@@ -269,21 +269,21 @@ cleanup_after_update() {
 
   if [ "$WORK_STARTED" -eq 1 ]; then
     if [ "$exit_code" -ne 0 ]; then
-      warn "작업이 실패 또는 취소되었습니다. 설정 복원을 수행합니다."
+      warn "The task failed or was cancelled. Restoring settings."
     fi
 
     if [ "$RESTORE_ON_EXIT" -eq 1 ]; then
-      restore_repos || warn "repo 설정 복원 중 오류가 발생했습니다. 수동 확인 필요: /etc/yum.repos.d"
+      restore_repos || warn "Repository restore failed. Manual check required: /etc/yum.repos.d"
     fi
 
-    unmount_iso || warn "ISO 언마운트 중 오류가 발생했습니다. 수동 확인 필요: $MNT_DIR"
+    unmount_iso || warn "ISO unmount failed. Manual check required: $MNT_DIR"
   fi
 
   exit "$exit_code"
 }
 
 signal_exit() {
-  warn "작업 중단 신호를 받았습니다."
+  warn "Interrupt signal received."
   exit 130
 }
 
@@ -291,12 +291,12 @@ run_minor_update() {
   check_environment
 
   echo
-  warn "이 작업은 ISO 기반으로 Rocky Linux 8.10 패키지 동기화를 수행합니다."
-  warn "작업 중 기존 repo 설정은 임시로 비활성화되며, 완료/실패/취소 시 복원됩니다."
-  printf "minor update를 진행하시겠습니까? [yes/NO]: "
+  warn "This task will run Rocky Linux 8.10 package synchronization using the ISO only."
+  warn "Existing repository settings are temporarily disabled and restored on completion, failure, or cancellation."
+  printf "Proceed with minor update? [yes/NO]: "
   read answer
   if [ "$answer" != "yes" ]; then
-    fail "사용자 취소"
+    fail "Cancelled by user"
   fi
 
   WORK_STARTED=1
@@ -309,35 +309,35 @@ run_minor_update() {
   disable_existing_repos
   create_local_repo
 
-  info "DNF 캐시 정리"
+  info "Cleaning DNF cache"
   run_cmd dnf clean all
   run_cmd rm -rf /var/cache/dnf
 
-  info "local repo 확인"
+  info "Checking local repositories"
   run_cmd dnf --disablerepo='*' --enablerepo="$BASEOS_REPO_ID","$APPSTREAM_REPO_ID" repolist
 
-  info "업데이트 대상 확인"
+  info "Checking available updates"
   dnf --disablerepo='*' --enablerepo="$BASEOS_REPO_ID","$APPSTREAM_REPO_ID" check-update || true
 
-  info "Rocky 8.10 기준 distro-sync 수행"
+  info "Running distro-sync to Rocky Linux 8.10"
   run_cmd dnf -y --disablerepo='*' \
     --enablerepo="$BASEOS_REPO_ID","$APPSTREAM_REPO_ID" \
     distro-sync
 
-  ok "패키지 동기화 완료"
+  ok "Package synchronization completed"
 
-  info "최종 버전 확인"
+  info "Checking final OS version"
   run_cmd cat /etc/rocky-release
   run_cmd rpm -q rocky-release
 
-  ok "minor update 완료. 재부팅을 권장합니다."
+  ok "Minor update completed. Reboot is recommended."
 }
 
 restore_previous_settings() {
   require_root
   restore_repos
   unmount_iso
-  ok "minor update 이전 설정 복원 작업 완료"
+  ok "Previous settings restore completed"
 }
 
 manage_iso_mount() {
@@ -346,12 +346,12 @@ manage_iso_mount() {
   while true; do
     echo
     echo "ISO Mount Management"
-    echo "1. ISO 마운트 상태 확인"
-    echo "2. ISO 마운트"
-    echo "3. ISO 언마운트"
-    echo "4. 이전 메뉴"
+    echo "1. Show ISO mount status"
+    echo "2. Mount ISO"
+    echo "3. Unmount ISO"
+    echo "4. Back to main menu"
     echo
-    printf "선택 [1-4]: "
+    printf "Select [1-4]: "
     read mount_choice
 
     case "$mount_choice" in
@@ -369,7 +369,7 @@ manage_iso_mount() {
         return 0
         ;;
       *)
-        warn "잘못된 선택입니다."
+        warn "Invalid selection."
         ;;
     esac
   done
@@ -379,13 +379,13 @@ show_menu() {
   while true; do
     echo
     echo "Rocky Linux 8.10 Minor Update Menu v$SCRIPT_VERSION"
-    echo "1. minor update 환경 확인"
-    echo "2. minor update 진행"
-    echo "3. ISO 마운트 관리"
-    echo "4. minor update 이전 설정 복원"
-    echo "5. 종료"
+    echo "1. Check minor update environment"
+    echo "2. ISO mount management"
+    echo "3. Run minor update"
+    echo "4. Restore previous settings"
+    echo "5. Exit"
     echo
-    printf "선택 [1-5]: "
+    printf "Select [1-5]: "
     read choice
 
     case "$choice" in
@@ -393,10 +393,10 @@ show_menu() {
         check_environment
         ;;
       2)
-        run_minor_update
+        manage_iso_mount
         ;;
       3)
-        manage_iso_mount
+        run_minor_update
         ;;
       4)
         restore_previous_settings
@@ -405,7 +405,7 @@ show_menu() {
         exit 0
         ;;
       *)
-        warn "잘못된 선택입니다."
+        warn "Invalid selection."
         ;;
     esac
   done
