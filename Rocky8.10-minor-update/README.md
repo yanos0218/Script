@@ -15,7 +15,7 @@ Rocky8.10_minor_update.sh
 ## 버전
 
 ```text
-1.7.0
+1.8.0
 ```
 
 스크립트 내부의 `SCRIPT_VERSION` 값으로도 확인할 수 있습니다.
@@ -151,6 +151,8 @@ lock 파일 위치:
 /root/rocky810_minor_update_state/update.lock
 ```
 
+lock 파일에는 PID와 함께 OS boot id를 기록합니다. 재부팅 후 PID가 재사용되더라도 boot id가 다르면 이전 boot에서 남은 stale lock으로 판단해 제거합니다.
+
 주요 상태 값은 다음과 같습니다.
 
 | Status | 의미 |
@@ -236,11 +238,13 @@ lock 파일 위치:
 - 운영 서버 적용 전 테스트 서버에서 먼저 검증해야 합니다.
 - 작업 완료 후 재부팅을 권장합니다.
 - 내부 hash 방식은 편의성과 파일 손상 감지 목적입니다. 강한 위변조 방지가 필요하면 별도 GPG 서명 검증 체계를 사용해야 합니다.
+- minor update 후에는 커널, glibc, systemd, 보안 라이브러리 등 실행 중인 프로세스가 계속 이전 바이너리를 잡고 있을 수 있으므로 재부팅을 권장합니다.
 
 ## Version History
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.8.0 | 2026-04-20 | update lock에 boot id를 추가해 재부팅 후 PID 재사용으로 인한 오판 방지 |
 | 1.7.0 | 2026-04-20 | update 성공 직후 cleanup 즉시 수행, update lock으로 중복 실행 및 실행 중 restore 방지 |
 | 1.6.0 | 2026-04-20 | update lock/status 확인 보강, 미완료 상태에서 수동 restore 재확인 추가 |
 | 1.5.0 | 2026-04-20 | 외부 `.sha256` 파일 제거, 스크립트 내부 checksum 검증 전환, update status 메뉴와 상태 파일 추가 |
