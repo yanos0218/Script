@@ -13,8 +13,8 @@ CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 UPDATE_STATUS_FILE="$STATE_DIR/update_status"
 LOCK_FILE="$STATE_DIR/update.lock"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_SHA256="b7628d400f9f28fe96e45e4173553c31508afb93a46d61368f1bedc82bc3392b"
-SCRIPT_VERSION="1.7.0"
+SCRIPT_SHA256="6d0757e3bc2b4035f17e95d6cfe441808c4c6c950308797f5759904dec3c590e"
+SCRIPT_VERSION="1.8.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -109,14 +109,46 @@ is_pid_running() {
   kill -0 "$pid" >/dev/null 2>&1
 }
 
-read_lock_pid() {
+get_boot_id() {
+  if [ -f /proc/sys/kernel/random/boot_id ]; then
+    cat /proc/sys/kernel/random/boot_id
+  else
+    echo "unknown"
+  fi
+}
+
+read_lock_value() {
+  key="$1"
+
   if [ -f "$LOCK_FILE" ]; then
+    sed -n "s/^$key=//p" "$LOCK_FILE" | tail -n 1
+  fi
+}
+
+read_lock_pid() {
+  lock_pid=$(read_lock_value "PID" || true)
+
+  if [ -n "$lock_pid" ]; then
+    echo "$lock_pid"
+  elif [ -f "$LOCK_FILE" ]; then
     sed -n '1p' "$LOCK_FILE"
   fi
 }
 
+read_lock_boot_id() {
+  read_lock_value "BOOT_ID" || true
+}
+
 check_update_lock() {
   lock_pid=$(read_lock_pid || true)
+  lock_boot_id=$(read_lock_boot_id || true)
+  current_boot_id=$(get_boot_id)
+
+  if [ -n "$lock_boot_id" ] && [ "$lock_boot_id" != "$current_boot_id" ]; then
+    warn "Stale update lock file from previous boot found. Removing: $LOCK_FILE"
+    rm -f "$LOCK_FILE"
+    return 0
+  fi
 
   if is_pid_running "$lock_pid"; then
     fail "Another update task appears to be running. Lock file: $LOCK_FILE PID: $lock_pid"
@@ -131,7 +163,11 @@ check_update_lock() {
 create_update_lock() {
   mkdir -p "$STATE_DIR"
   check_update_lock
-  echo "$$" > "$LOCK_FILE"
+  {
+    echo "PID=$$"
+    echo "BOOT_ID=$(get_boot_id)"
+    echo "STARTED_AT=$(date +%Y%m%d%H%M%S)"
+  } > "$LOCK_FILE"
 }
 
 remove_update_lock() {
@@ -152,7 +188,9 @@ show_update_status() {
   fi
 
   lock_pid=$(read_lock_pid || true)
-  if is_pid_running "$lock_pid"; then
+  lock_boot_id=$(read_lock_boot_id || true)
+  current_boot_id=$(get_boot_id)
+  if [ "$lock_boot_id" = "$current_boot_id" ] && is_pid_running "$lock_pid"; then
     info "Active update lock: $LOCK_FILE PID: $lock_pid"
   elif [ -f "$LOCK_FILE" ]; then
     warn "Stale update lock file exists: $LOCK_FILE"
