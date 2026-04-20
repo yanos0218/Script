@@ -15,7 +15,7 @@ Rocky8.10_minor_update.sh
 ## Version
 
 ```text
-1.0.0
+1.1.0
 ```
 
 스크립트 내부의 `SCRIPT_VERSION` 값으로도 확인할 수 있습니다.
@@ -50,8 +50,9 @@ sh /root/Rocky8.10_minor_update.sh
 ```text
 1. minor update 환경 확인
 2. minor update 진행
-3. minor update 이전 설정 복원
-4. 종료
+3. ISO 마운트 관리
+4. minor update 이전 설정 복원
+5. 종료
 ```
 
 ## Menu
@@ -87,7 +88,20 @@ sh /root/Rocky8.10_minor_update.sh
 13. 기존 repo 설정 복원
 14. ISO 언마운트
 
-### 3. minor update 이전 설정 복원
+### 3. ISO 마운트 관리
+
+ISO 마운트를 수동으로 확인하거나 제어하는 메뉴입니다.
+
+```text
+1. ISO 마운트 상태 확인
+2. ISO 마운트
+3. ISO 언마운트
+4. 이전 메뉴
+```
+
+`ISO 마운트`는 `/root/Rocky-8.10-x86_64-dvd1.iso` 파일을 `/mnt/rocky810_iso`에 read-only loop mount하고, `BaseOS`와 `AppStream` 디렉터리가 있는지 확인합니다.
+
+### 4. minor update 이전 설정 복원
 
 수동 복원 메뉴입니다.
 
@@ -116,7 +130,7 @@ sh /root/Rocky8.10_minor_update.sh
 - `/root/rocky810_minor_update_state/repo_backup` 안의 기존 repo 파일 복원
 - `/mnt/rocky810_iso` 언마운트
 
-수동 복원이 필요한 경우 메뉴에서 `3. minor update 이전 설정 복원`을 실행합니다.
+수동 복원이 필요한 경우 메뉴에서 `4. minor update 이전 설정 복원`을 실행합니다.
 
 ## Notes
 
@@ -131,4 +145,5 @@ sh /root/Rocky8.10_minor_update.sh
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.1.0 | 2026-04-20 | Add ISO mount management menu for status, mount, and unmount |
 | 1.0.0 | 2026-04-20 | Initial release for Rocky Linux 8.10 offline minor update |
