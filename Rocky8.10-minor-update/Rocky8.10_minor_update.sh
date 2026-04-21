@@ -17,8 +17,8 @@ CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 UPDATE_STATUS_FILE="$STATE_DIR/update_status"
 LOCK_FILE="$STATE_DIR/update.lock"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_SHA256="87a10aa95fe4db87afdee2440b29efcb34e6e0a3d3551eb2d2fbc454fc3036b2"
-SCRIPT_VERSION="3.3.0"
+SCRIPT_SHA256="8a1a10ea0463cdfed8837404bdecc6371d0ba4a7fbe9018dc448691e8596a8d3"
+SCRIPT_VERSION="3.3.1"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -316,15 +316,35 @@ require_rocky8() {
   info "Current rocky-release package: $(rpm -q rocky-release || true)"
 }
 
+show_iso_candidates() {
+  found_iso=0
+
+  for iso_candidate in "$SCRIPT_DIR"/Rocky-*-x86_64-dvd1.iso; do
+    [ -e "$iso_candidate" ] || continue
+    if [ "$found_iso" -eq 0 ]; then
+      warn "Rocky DVD ISO candidate(s) found in script directory:"
+    fi
+    warn "  $(basename "$iso_candidate")"
+    found_iso=1
+  done
+
+  warn "Required ISO file name: $ISO_FILENAME"
+  warn "Required ISO SHA256: $ISO_SHA256"
+}
+
 require_iso() {
   if [ ! -f "$ISO_PATH" ]; then
-    fail "ISO file not found: $ISO_PATH"
+    show_iso_candidates
+    fail "Required Rocky Linux 8.10 ISO file not found: $ISO_PATH"
   fi
 
   ok "ISO file found: $ISO_PATH"
 
   iso_hash=$(sha256sum "$ISO_PATH" | awk '{print $1}')
   if [ "$iso_hash" != "$ISO_SHA256" ]; then
+    warn "ISO file exists but checksum does not match the required Rocky Linux 8.10 DVD ISO."
+    warn "Required ISO file name: $ISO_FILENAME"
+    warn "Required ISO SHA256: $ISO_SHA256"
     fail "ISO checksum mismatch. Expected $ISO_SHA256 but got $iso_hash"
   fi
 
