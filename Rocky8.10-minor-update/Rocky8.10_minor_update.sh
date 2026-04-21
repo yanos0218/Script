@@ -17,7 +17,7 @@ CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 UPDATE_STATUS_FILE="$STATE_DIR/update_status"
 LOCK_FILE="$STATE_DIR/update.lock"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_SHA256="6e31aaf4b2f5ba83dabf2e5e37553a3d8bdc9a7be75b5fdb4502e4e3795a77d0"
+SCRIPT_SHA256="87a10aa95fe4db87afdee2440b29efcb34e6e0a3d3551eb2d2fbc454fc3036b2"
 SCRIPT_VERSION="3.3.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
@@ -30,8 +30,19 @@ MIN_BOOT_MB=512
 WORK_STARTED=0
 RESTORE_ON_EXIT=0
 
+color_enabled() {
+  [ -t 1 ] || return 1
+  [ -z "${NO_COLOR:-}" ] || return 1
+  [ "${TERM:-dumb}" != "dumb" ] || return 1
+  return 0
+}
+
 fail() {
-  echo "[FAIL] $1"
+  if color_enabled; then
+    printf '[\033[31mFAIL\033[0m] %s\n' "$1"
+  else
+    echo "[FAIL] $1"
+  fi
   exit 1
 }
 
@@ -60,10 +71,6 @@ run_menu_action() {
   )
   action_rc=$?
   set -e
-
-  if [ "$action_rc" -ne 0 ]; then
-    warn "Task stopped with exit code $action_rc. Returning to menu."
-  fi
 }
 
 set_run_context() {
@@ -440,6 +447,11 @@ unmount_iso() {
   fi
 }
 
+mount_iso_from_menu() {
+  require_iso
+  mount_iso
+}
+
 backup_repos() {
   repo_file_name=$(basename "$REPO_FILE")
 
@@ -746,14 +758,13 @@ manage_iso_mount() {
 
     case "$mount_choice" in
       1)
-        show_mount_status
+        run_menu_action show_mount_status
         ;;
       2)
-        require_iso
-        mount_iso
+        run_menu_action mount_iso_from_menu
         ;;
       3)
-        unmount_iso
+        run_menu_action unmount_iso
         ;;
       4)
         return 0
