@@ -14,8 +14,8 @@ CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 UPDATE_STATUS_FILE="$STATE_DIR/update_status"
 LOCK_FILE="$STATE_DIR/update.lock"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_SHA256="99960a95203f543497a0c77eee84bd5acbfd44f7f5125f8498e15bbe7f0c4006"
-SCRIPT_VERSION="2.1.0"
+SCRIPT_SHA256="a0012f389a3a36c41928cabe3f8a2ce2a1b0d8c21a3e7af3c08c71dbec42c689"
+SCRIPT_VERSION="3.2.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -57,7 +57,7 @@ set_run_context() {
 require_commands() {
   missing_commands=""
 
-  for command_name in awk basename cat cp date df dirname dnf grep id ls mkdir mount mountpoint mv rm rpm sed sha256sum sort tail umount uname; do
+  for command_name in awk basename cat cp date df dirname dnf grep id ls mkdir mount mountpoint mv pwd rm rpm sed sha256sum sort tail umount uname; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
       missing_commands="$missing_commands $command_name"
     fi
@@ -100,6 +100,14 @@ write_update_status() {
 read_update_status() {
   if [ -f "$UPDATE_STATUS_FILE" ]; then
     sed -n 's/^STATUS=//p' "$UPDATE_STATUS_FILE" | tail -n 1
+  fi
+}
+
+read_status_value() {
+  key="$1"
+
+  if [ -f "$UPDATE_STATUS_FILE" ]; then
+    sed -n "s/^$key=//p" "$UPDATE_STATUS_FILE" | tail -n 1
   fi
 }
 
@@ -190,7 +198,11 @@ show_update_status() {
     info "Status file: $UPDATE_STATUS_FILE"
   else
     info "Update status file: $UPDATE_STATUS_FILE"
-    cat "$UPDATE_STATUS_FILE"
+    info "Status: $(read_status_value STATUS || true)"
+    info "Updated at: $(read_status_value UPDATED_AT || true)"
+    info "Run ID: $(read_status_value RUN_ID || true)"
+    info "Backup dir: $(read_status_value BACKUP_DIR || true)"
+    info "Detail: $(read_status_value DETAIL || true)"
   fi
 
   lock_pid=$(read_lock_pid || true)
@@ -201,6 +213,19 @@ show_update_status() {
   elif [ -f "$LOCK_FILE" ]; then
     warn "Stale update lock file exists: $LOCK_FILE"
   fi
+}
+
+require_execution_directory() {
+  current_dir=$(pwd -P)
+
+  case "$current_dir" in
+    /root|/root/*|/home|/home/*)
+      ok "Execution directory check passed: $current_dir"
+      ;;
+    *)
+      fail "Run this script from /root or /home (subdirectories are allowed). Current directory: $current_dir"
+      ;;
+  esac
 }
 
 require_completed_update() {
@@ -352,6 +377,7 @@ check_environment() {
   require_root
   require_commands
   verify_script_hash
+  require_execution_directory
   info "Script version: $SCRIPT_VERSION"
   require_rocky8
   require_iso
@@ -763,4 +789,6 @@ show_menu() {
 require_root
 require_commands
 verify_script_hash
+require_execution_directory
 show_menu
+", "encoding": "utf-8", "sha": "e4d0607a3675b154d2936651b8edc17ed2580f0d", "display_url": "https://github.com/yanos0218/Script/blob/main/Rocky8.10-minor-update-README.md", "display_title": "Rocky8.10-minor-update-README.md"}
