@@ -1,8 +1,11 @@
 #!/bin/sh
 set -eu
 
-ISO_PATH="/root/Rocky-8.10-x86_64-dvd1.iso"
 SCRIPT_PATH="$0"
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$SCRIPT_PATH")" && pwd -P)
+ISO_FILENAME="Rocky-8.10-x86_64-dvd1.iso"
+ISO_PATH="$SCRIPT_DIR/$ISO_FILENAME"
+ISO_SHA256="642ada8a49dbeca8cca6543b31196019ee3d649a0163b5db0e646c7409364eeb"
 MNT_DIR="/mnt/rocky810_iso"
 REPO_FILE="/etc/yum.repos.d/rocky-8.10-local.repo"
 REPO_DIR="/etc/yum.repos.d"
@@ -14,8 +17,8 @@ CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 UPDATE_STATUS_FILE="$STATE_DIR/update_status"
 LOCK_FILE="$STATE_DIR/update.lock"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_SHA256="a0012f389a3a36c41928cabe3f8a2ce2a1b0d8c21a3e7af3c08c71dbec42c689"
-SCRIPT_VERSION="3.2.0"
+SCRIPT_SHA256="db78d4653a9f474cf4722862741d0582f0ce99ae1c14c00694722fb161760706"
+SCRIPT_VERSION="3.3.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -298,6 +301,13 @@ require_iso() {
   fi
 
   ok "ISO file found: $ISO_PATH"
+
+  iso_hash=$(sha256sum "$ISO_PATH" | awk '{print $1}')
+  if [ "$iso_hash" != "$ISO_SHA256" ]; then
+    fail "ISO checksum mismatch. Expected $ISO_SHA256 but got $iso_hash"
+  fi
+
+  ok "ISO checksum verification passed"
 }
 
 require_gpg_key() {
@@ -791,4 +801,3 @@ require_commands
 verify_script_hash
 require_execution_directory
 show_menu
-", "encoding": "utf-8", "sha": "e4d0607a3675b154d2936651b8edc17ed2580f0d", "display_url": "https://github.com/yanos0218/Script/blob/main/Rocky8.10-minor-update-README.md", "display_title": "Rocky8.10-minor-update-README.md"}
