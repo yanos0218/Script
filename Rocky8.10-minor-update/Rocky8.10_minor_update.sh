@@ -17,8 +17,8 @@ CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 UPDATE_STATUS_FILE="$STATE_DIR/update_status"
 LOCK_FILE="$STATE_DIR/update.lock"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_SHA256="8a1a10ea0463cdfed8837404bdecc6371d0ba4a7fbe9018dc448691e8596a8d3"
-SCRIPT_VERSION="3.3.1"
+SCRIPT_SHA256="bc1a3633793260416677db05c000ab35a01a12ed70e7286ae2d8844650d1121f"
+SCRIPT_VERSION="3.3.2"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
 APPSTREAM_REPO_ID="rocky-8.10-appstream"
@@ -56,6 +56,29 @@ ok() {
 
 warn() {
   echo "[WARN] $1"
+}
+
+confirm_yn() {
+  prompt="$1"
+
+  while true; do
+    printf "%s [Y/N]: " "$prompt"
+    if ! read -r answer; then
+      fail "Input aborted"
+    fi
+
+    case "$answer" in
+      Y)
+        return 0
+        ;;
+      N)
+        return 1
+        ;;
+      *)
+        warn "Invalid input. Enter Y or N only."
+        ;;
+    esac
+  done
 }
 
 run_cmd() {
@@ -665,9 +688,7 @@ run_minor_update() {
   echo
   warn "This task will run Rocky Linux 8.10 package synchronization using the ISO only."
   warn "Existing repository settings are temporarily disabled and restored on completion, failure, or cancellation."
-  printf "Proceed with minor update? [yes/NO]: "
-  read answer
-  if [ "$answer" != "yes" ]; then
+  if ! confirm_yn "Proceed with minor update?"; then
     fail "Cancelled by user"
   fi
 
@@ -734,9 +755,7 @@ restore_previous_settings() {
   current_status=$(read_update_status || true)
   if [ "$current_status" = "COMPLETED" ]; then
     warn "Last update status is COMPLETED. Restore is usually not required."
-    printf "Proceed with restore anyway? [yes/NO]: "
-    read restore_answer
-    if [ "$restore_answer" != "yes" ]; then
+    if ! confirm_yn "Proceed with restore anyway?"; then
       fail "Cancelled by user"
     fi
   fi
@@ -745,9 +764,7 @@ restore_previous_settings() {
     RUNNING|ISO_MOUNTED|REPO_BACKED_UP|REPO_DISABLED|LOCAL_REPO_CREATED|SYNC_COMPLETED)
       warn "Last update status is incomplete: $current_status"
       warn "Use restore only after confirming no update process is running."
-      printf "Proceed with restore? [yes/NO]: "
-      read incomplete_restore_answer
-      if [ "$incomplete_restore_answer" != "yes" ]; then
+      if ! confirm_yn "Proceed with restore?"; then
         fail "Cancelled by user"
       fi
       ;;
