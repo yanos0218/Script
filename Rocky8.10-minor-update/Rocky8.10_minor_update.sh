@@ -17,7 +17,7 @@ CURRENT_BACKUP_FILE="$STATE_DIR/current_backup"
 UPDATE_STATUS_FILE="$STATE_DIR/update_status"
 LOCK_FILE="$STATE_DIR/update.lock"
 GPG_KEY="/etc/pki/rpm-gpg/RPM-GPG-KEY-rockyofficial"
-SCRIPT_SHA256="db78d4653a9f474cf4722862741d0582f0ce99ae1c14c00694722fb161760706"
+SCRIPT_SHA256="6e31aaf4b2f5ba83dabf2e5e37553a3d8bdc9a7be75b5fdb4502e4e3795a77d0"
 SCRIPT_VERSION="3.3.0"
 
 BASEOS_REPO_ID="rocky-8.10-baseos"
@@ -50,6 +50,20 @@ warn() {
 run_cmd() {
   info "Run: $*"
   "$@"
+}
+
+run_menu_action() {
+  set +e
+  (
+    set -e
+    "$@"
+  )
+  action_rc=$?
+  set -e
+
+  if [ "$action_rc" -ne 0 ]; then
+    warn "Task stopped with exit code $action_rc. Returning to menu."
+  fi
 }
 
 set_run_context() {
@@ -388,7 +402,6 @@ check_environment() {
   require_commands
   verify_script_hash
   require_execution_directory
-  info "Script version: $SCRIPT_VERSION"
   require_rocky8
   require_iso
   require_gpg_key
@@ -755,7 +768,12 @@ manage_iso_mount() {
 show_menu() {
   while true; do
     echo
-    echo "Rocky Linux 8.10 Minor Update Menu v$SCRIPT_VERSION"
+    echo "###############################################"
+    echo "#                                             #"
+    echo "#        Rocky Linux 8.10 Minor Update        #"
+    echo "#                   v$SCRIPT_VERSION                    #"
+    echo "#                                             #"
+    echo "###############################################"
     echo "1. Check minor update environment"
     echo "2. ISO mount management"
     echo "3. Run minor update"
@@ -769,22 +787,22 @@ show_menu() {
 
     case "$choice" in
       1)
-        check_environment
+        run_menu_action check_environment
         ;;
       2)
-        manage_iso_mount
+        run_menu_action manage_iso_mount
         ;;
       3)
-        run_minor_update
+        run_menu_action run_minor_update
         ;;
       4)
-        show_update_status
+        run_menu_action show_update_status
         ;;
       5)
-        post_update_verification
+        run_menu_action post_update_verification
         ;;
       6)
-        restore_previous_settings
+        run_menu_action restore_previous_settings
         ;;
       7)
         exit 0
@@ -796,8 +814,8 @@ show_menu() {
   done
 }
 
-require_root
-require_commands
-verify_script_hash
-require_execution_directory
+run_menu_action require_root
+run_menu_action require_commands
+run_menu_action verify_script_hash
+run_menu_action require_execution_directory
 show_menu
